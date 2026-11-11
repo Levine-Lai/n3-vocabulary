@@ -44,13 +44,20 @@ function dates() {
 function attempt() {
   return state.attempts[date] ??= { answers: {}, submitted: false };
 }
+function example(item) {
+  const sentence = item.sentence_with_readings ||
+    item.sentence.replace(/【([^】]+)】/, (_, target) =>
+      item.word === item.reading ? target : `${item.word}（${item.reading}）`);
+  return escape(sentence.replace(/[／【】]/g, ""))
+    .replace(/([\p{Script=Han}々]+|[\p{Script=Han}々][ぁ-ゖ]+[\p{Script=Han}々]+)（([ぁ-ゖァ-ヺー]+)）/gu,
+      (_, word, reading) => `<ruby>${word}<rt>${reading}</rt></ruby>`);
+}
 function result(item, letter) {
   const correct = item.correct_option;
   return `<div class="result">
     <p><strong>${escape(item.word)}（${escape(item.reading)}）</strong> ${escape(item.meaning)}</p>
     <p>你的选择 ${escape(letter)}．${escape(item.options[letter])}　正确答案 ${escape(correct)}．${escape(item.options[correct])}</p>
-    ${item.sentence_with_readings ? `<p class="jp" lang="ja">${escape(item.sentence_with_readings.replaceAll("／", ""))}</p>` : ""}
-    <p class="jp" lang="ja">${escape(item.sentence.replace(/[【】]/g, ""))}</p>
+    <p class="jp" lang="ja">${example(item)}</p>
     ${item.sentence_analysis ? `<p>${escape(item.sentence_analysis)}</p>` : ""}
     ${item.sentence_translation ? `<p><strong>整句</strong>　${escape(item.sentence_translation)}</p>` : ""}
     ${letter && letter !== correct && (item.option_explanations?.[letter] || item.error_analysis) ?
@@ -90,7 +97,7 @@ function render() {
   }).join("");
   root.innerHTML = heading + `<div class="layout"><article class="panel" aria-labelledby="question-heading">
     <h2 id="question-heading">${position + 1} / ${quiz.questions.length}　${escape(item.type)}</h2>
-    <p class="sentence" lang="ja">${sentence}</p><div class="options">${buttons}</div>
+    ${current.submitted ? "" : `<p class="sentence" lang="ja">${sentence}</p>`}<div class="options">${buttons}</div>
     ${current.submitted ? result(item, letter) : ""}
     <div class="actions"><button id="previous" ${position === 0 ? "disabled" : ""}>上一题</button><button id="next" ${position === quiz.questions.length - 1 ? "disabled" : ""}>下一题</button></div>
     </article><aside class="panel side">
@@ -129,9 +136,17 @@ function go(index) {
   root.querySelector(".layout")?.scrollIntoView({ block: "nearest" });
 }
 function renderReview() {
+  const seen = new Set();
   const entries = Object.entries(state.attempts).sort(([a], [b]) => b.localeCompare(a))
     .flatMap(([day, record]) => record.submitted && Array.isArray(record.mistakes) ?
-      record.mistakes.map(item => ({ day, item, letter: record.answers[item.id] })) : []);
+      record.mistakes.map(item => ({ day, item, letter: record.answers[item.id] })) : [])
+    .filter(({ item, letter }) => {
+      if (!letter || letter === item.correct_option) return false;
+      const key = JSON.stringify([item.id, letter]);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
   root.innerHTML = `<div class="head"><div><h1>错题本</h1><p class="meta">${entries.length} 道错题</p></div></div>` +
     (entries.length ? `<div class="list">${entries.map(({ day, item, letter }) => `<details class="panel"><summary><span lang="ja">${escape(item.word)}</span>　<small>${escape(day.slice(0, 10))}</small></summary>${result(item, letter)}</details>`).join("")}</div>` : '<div class="panel empty">提交练习后，错题会出现在这里。</div>');
 }

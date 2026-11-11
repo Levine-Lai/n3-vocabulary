@@ -71,7 +71,7 @@ function example(item, notes) {
   }
   return output + ruby(units.slice(offset).join(""));
 }
-function result(item, letter) {
+function result(item, letter, showAnswerLabels = false) {
   const correct = item.correct_option;
   const lesson = (item.id.startsWith("2026-11-11-") ? lessons[Number(item.id.split("-").at(-1))] : null) ?? {};
   const notes = item.sentence_parts ?? lesson.parts ?? [
@@ -82,13 +82,9 @@ function result(item, letter) {
     const definition = key === correct ? `${item.reading} · ${item.meaning}` :
       item.option_explanations?.[key] || (Object.hasOwn(optionGlossary, label) ? optionGlossary[label] : "") || (letter === key ? item.error_analysis : "") ||
       (item.type === "日语选读音" ? `这个读音与「${item.word}」不对应。` : "这个写法与题目给出的读音或语境不匹配。");
-    return `<li><b lang="ja">${key}　${escape(label)}</b><span>${escape(definition)}</span></li>`;
+    return `<li><b><span lang="ja">${key}　${escape(label)}</span>${showAnswerLabels && key === letter ? ' <small>我的选择</small>' : ""}${showAnswerLabels && key === correct ? ' <small>正确答案</small>' : ""}</b><span>${escape(definition)}</span></li>`;
   }).join("");
   return `<div class="result">
-    <div class="answer-pair">
-      <div class="result-box picked"><h3>我的选择</h3><strong lang="ja">${letter ? escape(letter + "　" + item.options[letter]) : "未作答"}</strong></div>
-      <div class="result-box solution"><h3>正确答案</h3><strong lang="ja">${escape(correct + "　" + item.options[correct])}</strong></div>
-    </div>
     <section class="result-box"><h3>原句</h3><p class="jp" lang="ja">${example(item, notes)}</p></section>
     <section class="result-box"><h3>句子拆解</h3><ul class="phrase-list">
       ${notes.map(({ text, note }, index) => `<li><b lang="ja" class="phrase tone-${index % 3}">${escape(text)}</b><span>${escape(note)}</span></li>`).join("")}
@@ -181,7 +177,7 @@ function renderReview() {
       return true;
     });
   root.innerHTML = `<div class="head"><div><h1>错题本</h1><p class="meta">${entries.length} 道错题</p></div></div>` +
-    (entries.length ? `<div class="list">${entries.map(({ day, item, letter }) => `<details class="panel"><summary><span lang="ja">${escape(item.word)}</span>　<small>${escape(day.slice(0, 10))}</small></summary>${result(item, letter)}</details>`).join("")}</div>` : '<div class="panel empty">提交练习后，错题会出现在这里。</div>');
+    (entries.length ? `<div class="list">${entries.map(({ day, item, letter }) => `<details class="panel"><summary><span lang="ja">${escape(item.word)}</span>　<small>${escape(day.slice(0, 10))}</small></summary>${result(item, letter, true)}</details>`).join("")}</div>` : '<div class="panel empty">提交练习后，错题会出现在这里。</div>');
 }
 async function showDate(day) {
   const sequence = ++requestNumber;

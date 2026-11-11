@@ -21,11 +21,8 @@ main{padding-block:var(--space-xl);min-height:60vh}.head{flex-wrap:wrap;margin-b
 @media(max-width:360px){.options{grid-template-columns:1fr}.frame{width:calc(100% - 24px)}}
 
 
-.answer-pair {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--space-sm)}
 .result-box {background:var(--color-surface);border:1px solid var(--color-line);border-radius:var(--radius-sm);padding:var(--space-md);overflow-wrap:anywhere}
 .result-box h3 {font-size:var(--text-sm);margin:0 0 var(--space-sm);color:var(--color-muted)}
-.result-box.picked {background:var(--color-error-bg);color:var(--color-error)}
-.result-box.solution {background:var(--color-tint);color:var(--color-accent)}
 .result-box .jp {font-size:clamp(1.35rem,3vw,1.8rem);line-height:1.95}
 .phrase {background:var(--phrase-bg);border-radius:var(--radius-sm);box-decoration-break:clone}
 .tone-0 {--phrase-bg:var(--color-tint)}

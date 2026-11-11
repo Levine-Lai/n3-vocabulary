@@ -1,0 +1,9 @@
+/* Hallmark · macrostructure: Tool Layout · tone: calm editorial · anchor hue: teal */
+:root {
+ --color-paper:oklch(96.5% .012 85);--color-surface:oklch(99.1% .005 85);--color-ink:oklch(24% .025 180);--color-muted:oklch(45% .029 180);
+ --color-line:oklch(87% .025 88);--color-accent:oklch(38% .085 175);--color-tint:oklch(94% .037 174);--color-white:oklch(99% .005 175);--color-error:oklch(43% .145 29);--color-error-bg:oklch(95% .025 31);
+ --font-body:Inter,"Microsoft YaHei","PingFang SC",sans-serif;--font-jp:"Yu Mincho","Hiragino Mincho ProN","Noto Serif CJK JP",serif;
+ --space-xs:4px;--space-sm:8px;--space-md:16px;--space-lg:24px;--space-xl:32px;--space-2xl:48px;
+ --text-sm:.875rem;--text-base:1rem;--text-lg:1.25rem;--text-title:clamp(1.7rem,4vw,2.4rem);
+ --radius-sm:6px;--radius-md:10px;
+}

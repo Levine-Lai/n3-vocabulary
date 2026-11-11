@@ -26,6 +26,15 @@ const questions = source.questions.map((question, index) => {
       .filter(letter => letter !== clean.correct_option && typeof question.option_explanations[letter] === "string")
       .map(letter => [letter, question.option_explanations[letter]]));
   }
+  if (question.sentence_parts) {
+    const plain = question.sentence_with_readings.replace(/（[ぁ-ゖァ-ヺー]+）|[／【】]/gu, "");
+    if (!Array.isArray(question.sentence_parts) || question.sentence_parts.length < 2 ||
+      !question.sentence_parts.every(part => typeof part?.text === "string" && part.text &&
+        plain.includes(part.text) && typeof part.note === "string" && part.note)) {
+      throw Error(`第 ${index + 1} 题的拆解没有对应原句。`);
+    }
+    clean.sentence_parts = question.sentence_parts.map(({ text, note }) => ({ text, note }));
+  }
   return clean;
 });
 if (new Set(questions.map(question => question.id)).size !== 12 ||

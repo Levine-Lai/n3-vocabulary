@@ -44,24 +44,57 @@ function dates() {
 function attempt() {
   return state.attempts[date] ??= { answers: {}, submitted: false };
 }
-function example(item) {
-  const sentence = item.sentence_with_readings ||
-    item.sentence.replace(/【([^】]+)】/, (_, target) =>
-      item.word === item.reading ? target : `${item.word}（${item.reading}）`);
-  return escape(sentence.replace(/[／【】]/g, ""))
-    .replace(/([\p{Script=Han}々]+|[\p{Script=Han}々][ぁ-ゖ]+[\p{Script=Han}々]+)（([ぁ-ゖァ-ヺー]+)）/gu,
+const letters = ["A", "B", "C", "D"];
+function plainJapanese(value) {
+  return value.replace(/（[ぁ-ゖァ-ヺー]+）|[／【】]/gu, "");
+}
+function ruby(value) {
+  return escape(value.replace(/[／【】]/g, ""))
+    .replace(/([\p{Script=Han}々]+)（([ぁ-ゖァ-ヺー]+)）/gu,
       (_, word, reading) => `<ruby>${word}<rt>${reading}</rt></ruby>`);
+}
+function example(item, notes) {
+  const source = (item.sentence_with_readings ||
+    item.sentence.replace(/【[^】]+】/, item.word)).replace(/[／【】]/g, "");
+  const units = source.match(/[^（](?:（[ぁ-ゖァ-ヺー]+）)?/gu) ?? [];
+  const plain = plainJapanese(source);
+  const ranges = notes.map(({ text }, index) => ({ index, start: plain.indexOf(text), length: text.length }))
+    .filter(range => range.start >= 0)
+    .sort((a, b) => a.start - b.start);
+  let offset = 0;
+  let output = "";
+  for (const range of ranges) {
+    if (range.start < offset) continue;
+    output += ruby(units.slice(offset, range.start).join(""));
+    offset = range.start + range.length;
+    output += `<span class="phrase tone-${range.index % 3}">${ruby(units.slice(range.start, offset).join(""))}</span>`;
+  }
+  return output + ruby(units.slice(offset).join(""));
 }
 function result(item, letter) {
   const correct = item.correct_option;
+  const lesson = (item.id.startsWith("2026-11-11-") ? lessons[Number(item.id.split("-").at(-1))] : null) ?? {};
+  const notes = item.sentence_parts ?? lesson.parts ?? [
+    { text: item.word, note: item.meaning }
+  ];
+  const choices = letters.map(key => {
+    const label = item.options[key];
+    const definition = key === correct ? `${item.reading} · ${item.meaning}` :
+      item.option_explanations?.[key] || (Object.hasOwn(optionGlossary, label) ? optionGlossary[label] : "") || (letter === key ? item.error_analysis : "") ||
+      (item.type === "日语选读音" ? `这个读音与「${item.word}」不对应。` : "这个写法与题目给出的读音或语境不匹配。");
+    return `<li><b lang="ja">${key}　${escape(label)}</b><span>${escape(definition)}</span></li>`;
+  }).join("");
   return `<div class="result">
-    <p><strong>${escape(item.word)}（${escape(item.reading)}）</strong> ${escape(item.meaning)}</p>
-    <p>你的选择 ${escape(letter)}．${escape(item.options[letter])}　正确答案 ${escape(correct)}．${escape(item.options[correct])}</p>
-    <p class="jp" lang="ja">${example(item)}</p>
-    ${item.sentence_analysis ? `<p>${escape(item.sentence_analysis)}</p>` : ""}
-    ${item.sentence_translation ? `<p><strong>整句</strong>　${escape(item.sentence_translation)}</p>` : ""}
-    ${letter && letter !== correct && (item.option_explanations?.[letter] || item.error_analysis) ?
-      `<p class="meta">${escape(item.option_explanations?.[letter] || item.error_analysis)}</p>` : ""}
+    <div class="answer-pair">
+      <div class="result-box picked"><h3>我的选择</h3><strong lang="ja">${letter ? escape(letter + "　" + item.options[letter]) : "未作答"}</strong></div>
+      <div class="result-box solution"><h3>正确答案</h3><strong lang="ja">${escape(correct + "　" + item.options[correct])}</strong></div>
+    </div>
+    <section class="result-box"><h3>原句</h3><p class="jp" lang="ja">${example(item, notes)}</p></section>
+    <section class="result-box"><h3>句子拆解</h3><ul class="phrase-list">
+      ${notes.map(({ text, note }, index) => `<li><b lang="ja" class="phrase tone-${index % 3}">${escape(text)}</b><span>${escape(note)}</span></li>`).join("")}
+    </ul>${!item.sentence_parts && !lesson.parts && item.sentence_analysis ? `<p>${escape(item.sentence_analysis)}</p>` : ""}</section>
+    <section class="result-box"><h3>四个选项</h3><ul class="choice-notes">${choices}</ul></section>
+    ${item.sentence_translation || lesson.translation ? `<section class="result-box"><h3>中文翻译</h3><p>${escape(item.sentence_translation || lesson.translation)}</p></section>` : ""}
   </div>`;
 }
 function render() {
@@ -208,7 +241,7 @@ files.onchange = async () => {
       if (data.version === 1 && data.attempts && data.imported) {
         for (const [key, record] of Object.entries(data.attempts)) {
           if (!/^\d{4}-\d{2}-\d{2}(?: .+)?$/.test(key) || !record?.answers) continue;
-          if (Object.hasOwn(state.attempts, key) && state.attempts[key].submitted) continue;
+          if (Object.hasOwn(state.attempts, key) && state.attempts[key].submitted && !key.includes(" 历史错题 ")) continue;
           const answers = Object.fromEntries(Object.entries(record.answers).filter(([, value]) => /^[ABCD]$/.test(value)));
           const mistakes = Array.isArray(record.mistakes) ?
             record.mistakes.filter(item => usable({ date: key.slice(0, 10), questions: [item] }) &&

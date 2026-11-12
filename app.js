@@ -9,7 +9,8 @@ try {
   if (saved?.attempts && saved?.imported) state = saved;
 } catch { notice("本机记录无法读取。"); }
 
-const today = new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Shanghai" }).format(new Date());
+const beijingDate = new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Shanghai" });
+let today = beijingDate.format(new Date());
 let published = {};
 let date;
 let position = 0;
@@ -39,7 +40,9 @@ function usable(set) {
       ["A", "B", "C", "D"].every(letter => typeof item.options?.[letter] === "string"));
 }
 function dates() {
-  return [...new Set([...Object.keys(published), ...Object.keys(state.imported)])].sort().reverse();
+  return [...new Set([today, ...Object.keys(published), ...Object.keys(state.imported)])]
+    .filter(day => day.slice(0, 10) <= today)
+    .sort().reverse();
 }
 function attempt() {
   return state.attempts[date] ??= { answers: {}, submitted: false };
@@ -205,8 +208,25 @@ async function showDate(day) {
 }
 function changeScreen(next) {
   screen = next;
+  if (screen === "daily" && date !== today) {
+    void showDate(today);
+    return;
+  }
   render();
 }
+function checkDate() {
+  const nextDay = beijingDate.format(new Date());
+  if (nextDay === today) return;
+  const wasToday = date === today;
+  today = nextDay;
+  if (screen !== "daily") return;
+  if (wasToday) void showDate(today);
+  else render();
+}
+window.setInterval(checkDate, 1000);
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) checkDate();
+});
 async function loadQuizData(path) {
   const response = await fetch(path, { cache: "no-cache" });
   if (!response.ok) throw Error();
@@ -240,7 +260,7 @@ async function init() {
   if (index.status === "fulfilled" && history.status === "rejected") {
     notice("历史记录加载失败，请刷新页面重试。");
   }
-  await showDate(dates().includes(today) ? today : dates().find(day => day <= today) ?? dates()[0]);
+  await showDate(today);
 }
 
 document.querySelector("#daily").onclick = () => changeScreen("daily");

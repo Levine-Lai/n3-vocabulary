@@ -207,13 +207,39 @@ function changeScreen(next) {
   screen = next;
   render();
 }
+async function loadQuizData(path) {
+  const response = await fetch(path, { cache: "no-cache" });
+  if (!response.ok) throw Error();
+  return response.json();
+}
+async function loadHistory() {
+  const history = await loadQuizData("./quizzes/history.json");
+  let changed = false;
+  for (const [day, { answers, ...set }] of Object.entries(history)) {
+    if (!usable(set) || !set.questions.every(item => /^[ABCD]$/.test(answers?.[item.id]))) continue;
+    if (!Object.hasOwn(state.imported, day)) {
+      state.imported[day] = set;
+      changed = true;
+    }
+    if (!Object.hasOwn(state.attempts, day)) {
+      const mistakes = set.questions.filter(item => answers[item.id] !== item.correct_option);
+      state.attempts[day] = { answers, mistakes, submitted: true };
+      changed = true;
+    }
+  }
+  if (changed) save();
+}
 async function init() {
-  try {
-    const response = await fetch("./quizzes/index.json", { cache: "no-cache" });
-    if (!response.ok) throw Error();
-    published = await response.json();
-    notice("");
-  } catch { notice("题库加载失败，请检查网络后重试。"); }
+  notice("");
+  const [index, history] = await Promise.allSettled([
+    loadQuizData("./quizzes/index.json"),
+    loadHistory()
+  ]);
+  if (index.status === "fulfilled") published = index.value;
+  else notice("题库加载失败，请检查网络后重试。");
+  if (index.status === "fulfilled" && history.status === "rejected") {
+    notice("历史记录加载失败，请刷新页面重试。");
+  }
   await showDate(dates().includes(today) ? today : dates().find(day => day <= today) ?? dates()[0]);
 }
 

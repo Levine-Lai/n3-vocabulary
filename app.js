@@ -17,6 +17,10 @@ let position = 0;
 let screen = "daily";
 let quiz = null;
 let requestNumber = 0;
+let coreQuestions = null;
+let training = null;
+const roundSize = 10;
+state.training ??= { seen: [], units: {} };
 
 function notice(message) {
   const output = document.querySelector("#notice");
@@ -98,47 +102,58 @@ function result(item, letter, showAnswerLabels = false) {
 }
 function render() {
   document.querySelector("#daily").setAttribute("aria-pressed", String(screen === "daily"));
-  document.querySelector("#review").setAttribute("aria-pressed", String(screen === "review"));
+  document.querySelector("#review").setAttribute("aria-pressed", String(screen === "review" || screen === "loop"));
+  document.querySelector("#core").setAttribute("aria-pressed", String(screen === "core"));
   if (screen === "review") return renderReview();
+  if (screen === "core" && !training) return renderCore();
+  const practice = training && screen !== "daily";
   const choices = dates().map(day => `<option value="${escape(day)}"${date === day ? " selected" : ""}>${escape(day)}</option>`).join("");
-  const heading = `<div class="head"><div><h1>每日练习</h1><p class="meta">${escape(date ?? today)} · 北京时间${date && date !== today ? " · 历史练习" : ""}</p></div>
+  const heading = practice ? `<div class="head"><div><h1>${screen === "core" ? "高频 100 词 · 第 " + (training.unit + 1) + " 组" : "错题循环"}</h1></div><button id="training-back">返回</button></div>` : `<div class="head"><div><h1>每日练习</h1><p class="meta">${escape(date ?? today)} · 北京时间${date && date !== today ? " · 历史练习" : ""}</p></div>
     ${choices ? `<select aria-label="练习日期" id="date">${choices}</select>` : ""}</div>`;
-  if (!quiz) {
+  if (!practice && !quiz) {
     root.innerHTML = heading + '<div class="panel empty"><p>今天的题目尚未发布。</p><button id="reload">刷新题库</button></div>';
     root.querySelector("#reload").onclick = init;
     bindDate();
     return;
   }
-  const current = attempt();
-  const item = quiz.questions[position];
+  const questions = practice ? training.questions : quiz.questions;
+  const current = practice ? training : attempt();
+  const item = questions[position];
   const letter = current.answers[item.id];
-  const answered = quiz.questions.filter(question => current.answers[question.id]).length;
-  const score = quiz.questions.filter(question => current.answers[question.id] === question.correct_option).length;
+  const answered = questions.filter(question => current.answers[question.id]).length;
+  const score = questions.filter(question => current.answers[question.id] === question.correct_option).length;
   const sentence = escape(item.sentence).replace(/【([^】]+)】/g, "<mark>$1</mark>");
   const buttons = ["A", "B", "C", "D"].map(key => {
     const label = item.options[key];
     let style = letter === key ? "chosen" : "";
     if (current.submitted && key === item.correct_option) style = "right";
     if (current.submitted && key === letter && key !== item.correct_option) style = "wrong";
-    return `<button class="${style}" data-answer="${key}" aria-pressed="${letter === key}" ${current.submitted ? "disabled" : ""}><span class="letter">${key}</span><span lang="ja">${escape(label)}</span></button>`;
+    return `<button class="${style}" data-answer="${key}" aria-pressed="${letter === key}" ${current.submitted ? "disabled" : ""}><span class="letter">${key}</span><span${item.type === "语境选词义" ? "" : ' lang="ja"'}>${escape(label)}</span></button>`;
   }).join("");
-  const numbers = quiz.questions.map((question, index) => {
+  const numbers = questions.map((question, index) => {
     const answer = current.answers[question.id];
     const style = current.submitted ? (answer === question.correct_option ? "right" : "wrong") : (answer ? "done" : "");
     return `<button data-index="${index}" aria-label="第 ${index + 1} 题${answer ? "，已作答" : ""}" class="${style} ${index === position ? "current" : ""}" ${index === position ? 'aria-current="step"' : ""}>${index + 1}</button>`;
   }).join("");
   root.innerHTML = heading + `<div class="layout"><article class="panel" aria-labelledby="question-heading">
-    <h2 id="question-heading">${position + 1} / ${quiz.questions.length}　${escape(item.type)}</h2>
+    <h2 id="question-heading">${position + 1} / ${questions.length}　${escape(item.type)}</h2>
     ${current.submitted ? "" : `<p class="sentence" lang="ja">${sentence}</p>`}<div class="options">${buttons}</div>
     ${current.submitted ? result(item, letter) : ""}
-    <div class="actions"><button id="previous" ${position === 0 ? "disabled" : ""}>上一题</button><button id="next" ${position === quiz.questions.length - 1 ? "disabled" : ""}>下一题</button></div>
+    <div class="actions"><button id="previous" ${position === 0 ? "disabled" : ""}>上一题</button><button id="next" ${position === questions.length - 1 ? "disabled" : ""}>下一题</button></div>
     </article><aside class="panel side">
-    <h2>${current.submitted ? `得分 ${score} / ${quiz.questions.length}` : "答题进度"}</h2>
-    <p class="meta">${current.submitted ? "选择题号查看解析" : `已答 ${answered} / ${quiz.questions.length}`}</p>
-    <progress aria-label="已答题数" value="${answered}" max="${quiz.questions.length}"></progress><div class="numbers">${numbers}</div>
-    ${current.submitted ? '<button id="mistakes" class="primary">查看错题本</button>' : `<button id="submit" class="primary" ${answered !== quiz.questions.length ? "disabled" : ""}>提交答案</button>`}
+    <h2>${current.submitted ? `得分 ${score} / ${questions.length}` : "答题进度"}</h2>
+    <p class="meta">${current.submitted ? "选择题号查看解析" : `已答 ${answered} / ${questions.length}`}</p>
+    <progress aria-label="已答题数" value="${answered}" max="${questions.length}"></progress><div class="numbers">${numbers}</div>
+    ${current.submitted ? (practice
+      ? `<button id="continue-training" class="primary">${screen === "core" ? "返回专项" : "再练一轮"}</button>`
+      : '<button id="mistakes" class="primary">查看错题本</button>') : `<button id="submit" class="primary" ${answered !== questions.length ? "disabled" : ""}>提交答案</button>`}
     </aside></div>`;
   bindDate();
+  if (practice) {
+    root.querySelector("#training-back").onclick = () => changeScreen(screen === "core" ? "core" : "review");
+    const nextRound = root.querySelector("#continue-training");
+    if (nextRound) nextRound.onclick = () => screen === "core" ? changeScreen("core") : startReviewRound();
+  }
   root.querySelectorAll("[data-answer]").forEach(button => button.onclick = () => {
     current.answers[item.id] = button.dataset.answer;
     save();
@@ -151,7 +166,8 @@ function render() {
   const submit = root.querySelector("#submit");
   if (submit) submit.onclick = () => {
     current.submitted = true;
-    current.mistakes = quiz.questions.filter(question => current.answers[question.id] !== question.correct_option);
+    current.mistakes = questions.filter(question => current.answers[question.id] !== question.correct_option);
+    if (practice) completeTraining(current);
     save();
     go(0);
   };
@@ -167,9 +183,9 @@ function go(index) {
   render();
   root.querySelector(".layout")?.scrollIntoView({ block: "nearest" });
 }
-function renderReview() {
+function mistakeEntries() {
   const seen = new Set();
-  const entries = Object.entries(state.attempts).sort(([a], [b]) => b.localeCompare(a))
+  return Object.entries(state.attempts).sort(([a], [b]) => b.localeCompare(a))
     .flatMap(([day, record]) => record.submitted && Array.isArray(record.mistakes) ?
       record.mistakes.map(item => ({ day, item, letter: record.answers[item.id] })) : [])
     .filter(({ item, letter }) => {
@@ -179,9 +195,103 @@ function renderReview() {
       seen.add(key);
       return true;
     });
-  root.innerHTML = `<div class="head"><div><h1>错题本</h1><p class="meta">${entries.length} 道错题</p></div></div>` +
-    (entries.length ? `<div class="list">${entries.map(({ day, item, letter }) => `<details class="panel"><summary><span lang="ja">${escape(item.word)}</span>　<small>${escape(day.slice(0, 10))}</small></summary>${result(item, letter, true)}</details>`).join("")}</div>` : '<div class="panel empty">提交练习后，错题会出现在这里。</div>');
 }
+function renderReview() {
+  const entries = mistakeEntries();
+  root.innerHTML = `<div class="head"><div><h1>错题本</h1><p class="meta">${entries.length} 道错题</p></div>${entries.length ? '<button id="review-round" class="primary">随机练错题</button>' : ""}</div>` +
+    (entries.length ? `<div class="list">${entries.map(({ day, item, letter }) => `<details class="panel"><summary><span lang="ja">${escape(item.word)}</span>　<small>${escape(day.slice(0, 10))}</small></summary>${result(item, letter, true)}</details>`).join("")}</div>` : '<div class="panel empty">提交练习后，错题会出现在这里。</div>');
+  const start = root.querySelector("#review-round");
+  if (start) start.onclick = startReviewRound;
+}
+function shuffle(values) {
+  const items = [...values];
+  for (let i = items.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [items[i], items[j]] = [items[j], items[i]];
+  }
+  return items;
+}
+function shuffledQuestion(item, previous) {
+  const keys = shuffle(letters);
+  return {
+    ...item,
+    options: Object.fromEntries(keys.map((key, i) => [letters[i], item.options[key]])),
+    correct_option: letters[keys.indexOf(item.correct_option)],
+    option_explanations: Object.fromEntries(keys.flatMap((key, i) => {
+      const note = item.option_explanations?.[key] || (key === previous ? item.error_analysis : "");
+      return note ? [[letters[i], note]] : [];
+    })),
+    error_analysis: ""
+  };
+}
+function startReviewRound() {
+  const pool = new Map();
+  for (const entry of mistakeEntries()) {
+    if (!pool.has(entry.item.word)) pool.set(entry.item.word, entry);
+  }
+  if (!pool.size) return changeScreen("review");
+  let available = [...pool.keys()].filter(word => !state.training.seen.includes(word));
+  if (!available.length) {
+    state.training.seen = [];
+    available = [...pool.keys()];
+  }
+  screen = "loop";
+  const questions = shuffle(available).slice(0, roundSize).map(word => {
+    const { item, letter } = pool.get(word);
+    return shuffledQuestion(item, letter);
+  });
+  training = { questions, answers: {}, submitted: false };
+  go(0);
+}
+async function renderCore() {
+  if (!coreQuestions) {
+    root.innerHTML = '<div class="panel empty" role="status">正在加载专项词汇…</div>';
+    try {
+      const data = await loadQuizData("./quizzes/core-100.json");
+      if (!usable({ date: today, questions: data.questions }) || data.questions.length !== 100) throw Error();
+      coreQuestions = data.questions;
+    } catch {
+      if (screen === "core" && !training) {
+        root.innerHTML = '<div class="panel empty"><p>专项词汇加载失败。</p><button id="retry-core">重试</button></div>';
+        root.querySelector("#retry-core").onclick = renderCore;
+      }
+      return;
+    }
+    if (screen !== "core" || training) return;
+  }
+  const units = state.training.units;
+  const completed = Object.keys(units).length;
+  root.innerHTML = `<div class="head"><div><h1>高频 100 词</h1><p class="meta">语境选词义 · 已完成 ${completed} / 10 组</p></div></div>
+    <div class="list unit-grid">${Array.from({ length: 10 }, (_, unit) =>
+      `<button class="panel unit" data-unit="${unit}"><strong>第 ${unit + 1} 组</strong><small>${Object.hasOwn(units, unit) ? "最高 " + units[unit] + " / 10" : "10 题"}</small></button>`).join("")}</div>
+    <p class="meta source">词频参考 <a href="https://shikken.app/en/jlpt-n3-vocabulary-list/">Shikken</a> / <a href="https://www.edrdg.org/wiki/index.php/JMdict-EDICT_Dictionary_Project">JMdict（EDRDG）</a> · <a href="https://creativecommons.org/licenses/by-sa/4.0/">CC BY-SA 4.0</a></p>`;
+  root.querySelectorAll("[data-unit]").forEach(button => button.onclick = () => {
+    const unit = Number(button.dataset.unit);
+    const questions = coreQuestions.slice(unit * roundSize, (unit + 1) * roundSize)
+      .map(item => shuffledQuestion(item));
+    training = { unit, questions, answers: {}, submitted: false };
+    go(0);
+  });
+}
+function completeTraining(round) {
+  if (screen === "loop") {
+    state.training.seen.push(...round.questions.map(item => item.word));
+    return;
+  }
+  const units = state.training.units;
+  const score = round.questions.length - round.mistakes.length;
+  units[round.unit] = Math.max(score, units[round.unit] ?? 0);
+  if (round.mistakes.length) {
+    const key = today + " 高频专项 " + (round.unit + 1);
+    const record = state.attempts[key] ??= { answers: {}, mistakes: [], submitted: true };
+    for (const item of round.mistakes) {
+      if (Object.hasOwn(record.answers, item.id)) continue;
+      record.answers[item.id] = round.answers[item.id];
+      record.mistakes.push(item);
+    }
+  }
+}
+
 async function showDate(day) {
   const sequence = ++requestNumber;
   date = day;
@@ -207,6 +317,8 @@ async function showDate(day) {
   render();
 }
 function changeScreen(next) {
+  training = null;
+  position = 0;
   screen = next;
   if (screen === "daily" && date !== today) {
     void showDate(today);
@@ -265,6 +377,7 @@ async function init() {
 
 document.querySelector("#daily").onclick = () => changeScreen("daily");
 document.querySelector("#review").onclick = () => changeScreen("review");
+document.querySelector("#core").onclick = () => changeScreen("core");
 document.querySelector("#export").onclick = () => {
   const url = URL.createObjectURL(new Blob([JSON.stringify({ version: 1, ...state }, null, 2)], { type: "application/json" }));
   const anchor = document.createElement("a");
@@ -281,6 +394,11 @@ files.onchange = async () => {
     try {
       const data = JSON.parse(await file.text());
       if (data.version === 1 && data.attempts && data.imported) {
+        for (const [unit, score] of Object.entries(data.training?.units ?? {})) {
+          if (/^[0-9]$/.test(unit) && Number.isInteger(score) && score >= 0 && score <= 10) {
+            state.training.units[unit] = Math.max(score, state.training.units[unit] ?? 0);
+          }
+        }
         for (const [key, record] of Object.entries(data.attempts)) {
           if (!/^\d{4}-\d{2}-\d{2}(?: .+)?$/.test(key) || !record?.answers) continue;
           if (Object.hasOwn(state.attempts, key) && state.attempts[key].submitted && !key.includes(" 历史错题 ")) continue;

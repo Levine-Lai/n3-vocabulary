@@ -36,3 +36,12 @@ main{padding-block:var(--space-xl);min-height:60vh}.head{flex-wrap:wrap;margin-b
   .phrase-list li,.choice-notes li {grid-template-columns:1fr;gap:var(--space-xs)}
   .result-box {padding:var(--space-sm) var(--space-md)}
 }
+
+.unit-grid {grid-template-columns:repeat(auto-fit,minmax(140px,1fr))}
+.unit {text-align:left;display:grid;gap:var(--space-xs)}
+.source {margin-top:var(--space-md)}
+.source a {color:var(--color-accent)}
+@media(max-width:540px) {
+  .bar {flex-wrap:wrap;justify-content:flex-start;padding-block:var(--space-sm)}
+  .bar nav {flex-wrap:wrap}
+}

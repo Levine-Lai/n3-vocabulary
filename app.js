@@ -21,6 +21,7 @@ let coreQuestions = null;
 let training = null;
 const roundSize = 10;
 state.training ??= { seen: [], units: {} };
+state.training.wordMeaningUnits ??= {};
 
 function notice(message) {
   const output = document.querySelector("#notice");
@@ -92,6 +93,7 @@ function result(item, letter, showAnswerLabels = false) {
     return `<li><b><span lang="ja">${key}　${escape(label)}</span>${showAnswerLabels && key === letter ? ' <small>我的选择</small>' : ""}${showAnswerLabels && key === correct ? ' <small>正确答案</small>' : ""}</b><span>${escape(definition)}</span></li>`;
   }).join("");
   return `<div class="result">
+    ${item.word_note ? `<section class="result-box"><h3>词义</h3><p>${escape(item.word_note)}</p></section>` : ""}
     <section class="result-box"><h3>原句</h3><p class="jp" lang="ja">${example(item, notes)}</p></section>
     <section class="result-box"><h3>句子拆解</h3><ul class="phrase-list">
       ${notes.map(({ text, note }, index) => `<li><b lang="ja" class="phrase tone-${index % 3}">${escape(text)}</b><span>${escape(note)}</span></li>`).join("")}
@@ -122,13 +124,15 @@ function render() {
   const letter = current.answers[item.id];
   const answered = questions.filter(question => current.answers[question.id]).length;
   const score = questions.filter(question => current.answers[question.id] === question.correct_option).length;
-  const sentence = escape(item.sentence).replace(/【([^】]+)】/g, "<mark>$1</mark>");
+  const wordMeaning = item.type === "看日文选词义";
+  const sentence = wordMeaning ? escape(item.word) :
+    escape(item.sentence).replace(/【([^】]+)】/g, "<mark>$1</mark>");
   const buttons = ["A", "B", "C", "D"].map(key => {
     const label = item.options[key];
     let style = letter === key ? "chosen" : "";
     if (current.submitted && key === item.correct_option) style = "right";
     if (current.submitted && key === letter && key !== item.correct_option) style = "wrong";
-    return `<button class="${style}" data-answer="${key}" aria-pressed="${letter === key}" ${current.submitted ? "disabled" : ""}><span class="letter">${key}</span><span${item.type === "语境选词义" ? "" : ' lang="ja"'}>${escape(label)}</span></button>`;
+    return `<button class="${style}" data-answer="${key}" aria-pressed="${letter === key}" ${current.submitted ? "disabled" : ""}><span class="letter">${key}</span><span${(wordMeaning || item.type === "语境选词义") ? "" : ' lang="ja"'}>${escape(label)}</span></button>`;
   }).join("");
   const numbers = questions.map((question, index) => {
     const answer = current.answers[question.id];
@@ -259,9 +263,9 @@ async function renderCore() {
     }
     if (screen !== "core" || training) return;
   }
-  const units = state.training.units;
+  const units = state.training.wordMeaningUnits;
   const completed = Object.keys(units).length;
-  root.innerHTML = `<div class="head"><div><h1>高频 100 词</h1><p class="meta">语境选词义 · 已完成 ${completed} / 10 组</p></div></div>
+  root.innerHTML = `<div class="head"><div><h1>高频 100 词</h1><p class="meta">看日文选中文意思 · 已完成 ${completed} / 10 组</p></div></div>
     <div class="list unit-grid">${Array.from({ length: 10 }, (_, unit) =>
       `<button class="panel unit" data-unit="${unit}"><strong>第 ${unit + 1} 组</strong><small>${Object.hasOwn(units, unit) ? "最高 " + units[unit] + " / 10" : "10 题"}</small></button>`).join("")}</div>
     <p class="meta source">词频参考 <a href="https://shikken.app/en/jlpt-n3-vocabulary-list/">Shikken</a> / <a href="https://www.edrdg.org/wiki/index.php/JMdict-EDICT_Dictionary_Project">JMdict（EDRDG）</a> · <a href="https://creativecommons.org/licenses/by-sa/4.0/">CC BY-SA 4.0</a></p>`;
@@ -278,11 +282,11 @@ function completeTraining(round) {
     state.training.seen.push(...round.questions.map(item => item.word));
     return;
   }
-  const units = state.training.units;
+  const units = state.training.wordMeaningUnits;
   const score = round.questions.length - round.mistakes.length;
   units[round.unit] = Math.max(score, units[round.unit] ?? 0);
   if (round.mistakes.length) {
-    const key = today + " 高频专项 " + (round.unit + 1);
+    const key = today + " 高频词义专项 " + (round.unit + 1);
     const record = state.attempts[key] ??= { answers: {}, mistakes: [], submitted: true };
     for (const item of round.mistakes) {
       if (Object.hasOwn(record.answers, item.id)) continue;
@@ -394,9 +398,12 @@ files.onchange = async () => {
     try {
       const data = JSON.parse(await file.text());
       if (data.version === 1 && data.attempts && data.imported) {
-        for (const [unit, score] of Object.entries(data.training?.units ?? {})) {
-          if (/^[0-9]$/.test(unit) && Number.isInteger(score) && score >= 0 && score <= 10) {
-            state.training.units[unit] = Math.max(score, state.training.units[unit] ?? 0);
+        for (const mode of ["units", "wordMeaningUnits"]) {
+          for (const [unit, score] of Object.entries(data.training?.[mode] ?? {})) {
+            if (/^[0-9]$/.test(unit) && Number.isInteger(score) && score >= 0 && score <= 10) {
+              const units = state.training[mode];
+              units[unit] = Math.max(score, units[unit] ?? 0);
+            }
           }
         }
         for (const [key, record] of Object.entries(data.attempts)) {

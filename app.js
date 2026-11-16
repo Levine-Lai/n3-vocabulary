@@ -21,7 +21,11 @@ let coreQuestions = null;
 let training = null;
 const roundSize = 10;
 state.training ??= { seen: [], units: {} };
-state.training.wordMeaningUnits ??= {};
+const coreModes = {
+  meaning: { label: "词义单元", instruction: "看日文选中文意思", progress: "wordMeaningUnits" },
+  reading: { label: "读音单元", instruction: "看日文选平假名", progress: "wordReadingUnits" }
+};
+for (const { progress } of Object.values(coreModes)) state.training[progress] ??= {};
 
 function notice(message) {
   const output = document.querySelector("#notice");
@@ -110,7 +114,7 @@ function render() {
   if (screen === "core" && !training) return renderCore();
   const practice = training && screen !== "daily";
   const choices = dates().map(day => `<option value="${escape(day)}"${date === day ? " selected" : ""}>${escape(day)}</option>`).join("");
-  const heading = practice ? `<div class="head"><div><h1>${screen === "core" ? "高频 100 词 · 第 " + (training.unit + 1) + " 组" : "错题循环"}</h1></div><button id="training-back">返回</button></div>` : `<div class="head"><div><h1>每日练习</h1><p class="meta">${escape(date ?? today)} · 北京时间${date && date !== today ? " · 历史练习" : ""}</p></div>
+  const heading = practice ? `<div class="head"><div><h1>${screen === "core" ? coreModes[training.mode].label + " · 第 " + (training.unit + 1) + " 组" : "错题循环"}</h1></div><button id="training-back">返回</button></div>` : `<div class="head"><div><h1>每日练习</h1><p class="meta">${escape(date ?? today)} · 北京时间${date && date !== today ? " · 历史练习" : ""}</p></div>
     ${choices ? `<select aria-label="练习日期" id="date">${choices}</select>` : ""}</div>`;
   if (!practice && !quiz) {
     root.innerHTML = heading + '<div class="panel empty"><p>今天的题目尚未发布。</p><button id="reload">刷新题库</button></div>';
@@ -125,7 +129,7 @@ function render() {
   const answered = questions.filter(question => current.answers[question.id]).length;
   const score = questions.filter(question => current.answers[question.id] === question.correct_option).length;
   const wordMeaning = item.type === "看日文选词义";
-  const sentence = wordMeaning ? escape(item.word) :
+  const sentence = wordMeaning || item.type === "看日文选平假名" ? escape(item.word) :
     escape(item.sentence).replace(/【([^】]+)】/g, "<mark>$1</mark>");
   const buttons = ["A", "B", "C", "D"].map(key => {
     const label = item.options[key];
@@ -203,7 +207,7 @@ function mistakeEntries() {
 function renderReview() {
   const entries = mistakeEntries();
   root.innerHTML = `<div class="head"><div><h1>错题本</h1><p class="meta">${entries.length} 道错题</p></div>${entries.length ? '<button id="review-round" class="primary">随机练错题</button>' : ""}</div>` +
-    (entries.length ? `<div class="list">${entries.map(({ day, item, letter }) => `<details class="panel"><summary><span lang="ja">${escape(item.word)}</span>　<small>${escape(day.slice(0, 10))}</small></summary>${result(item, letter, true)}</details>`).join("")}</div>` : '<div class="panel empty">提交练习后，错题会出现在这里。</div>');
+    (entries.length ? `<div class="list">${entries.map(({ day, item, letter }) => `<details class="panel"><summary><span lang="ja">${escape(item.word)}</span>　<small>${escape(day.slice(0, 10))} · ${escape(item.type)}</small></summary>${result(item, letter, true)}</details>`).join("")}</div>` : '<div class="panel empty">提交练习后，错题会出现在这里。</div>');
   const start = root.querySelector("#review-round");
   if (start) start.onclick = startReviewRound;
 }
@@ -228,10 +232,16 @@ function shuffledQuestion(item, previous) {
     error_analysis: ""
   };
 }
+function reviewKey(item) {
+  return item.type === "看日文选平假名" || item.type === "看日文选词义"
+    ? item.type + " " + item.word
+    : item.word;
+}
 function startReviewRound() {
   const pool = new Map();
   for (const entry of mistakeEntries()) {
-    if (!pool.has(entry.item.word)) pool.set(entry.item.word, entry);
+    const key = reviewKey(entry.item);
+    if (!pool.has(key)) pool.set(key, entry);
   }
   if (!pool.size) return changeScreen("review");
   let available = [...pool.keys()].filter(word => !state.training.seen.includes(word));
@@ -251,7 +261,7 @@ async function renderCore() {
   if (!coreQuestions) {
     root.innerHTML = '<div class="panel empty" role="status">正在加载专项词汇…</div>';
     try {
-      const data = await loadQuizData("./quizzes/core-100.json");
+      const data = await loadQuizData("./quizzes/core-100.json?v=2");
       if (!usable({ date: today, questions: data.questions }) || data.questions.length !== 100) throw Error();
       coreQuestions = data.questions;
     } catch {
@@ -263,30 +273,52 @@ async function renderCore() {
     }
     if (screen !== "core" || training) return;
   }
-  const units = state.training.wordMeaningUnits;
-  const completed = Object.keys(units).length;
-  root.innerHTML = `<div class="head"><div><h1>高频 100 词</h1><p class="meta">看日文选中文意思 · 已完成 ${completed} / 10 组</p></div></div>
-    <div class="list unit-grid">${Array.from({ length: 10 }, (_, unit) =>
-      `<button class="panel unit" data-unit="${unit}"><strong>第 ${unit + 1} 组</strong><small>${Object.hasOwn(units, unit) ? "最高 " + units[unit] + " / 10" : "10 题"}</small></button>`).join("")}</div>
+  const sections = Object.entries(coreModes).map(([mode, { label, instruction, progress }]) => {
+    const units = state.training[progress];
+    const completed = Object.keys(units).length;
+    return `<section class="core-section" aria-labelledby="core-${mode}">
+      <div class="head"><div><h2 id="core-${mode}">${label}</h2><p class="meta">${instruction} · 已完成 ${completed} / 10 组</p></div></div>
+      <div class="list unit-grid">${Array.from({ length: 10 }, (_, unit) =>
+        `<button class="panel unit" data-mode="${mode}" data-unit="${unit}"><strong>第 ${unit + 1} 组</strong><small>${Object.hasOwn(units, unit) ? "最高 " + units[unit] + " / 10" : "10 题"}</small></button>`).join("")}</div>
+    </section>`;
+  }).join("");
+  root.innerHTML = `<div class="head"><h1>高频 100 词</h1></div>
+    ${sections}
     <p class="meta source">词频参考 <a href="https://shikken.app/en/jlpt-n3-vocabulary-list/">Shikken</a> / <a href="https://www.edrdg.org/wiki/index.php/JMdict-EDICT_Dictionary_Project">JMdict（EDRDG）</a> · <a href="https://creativecommons.org/licenses/by-sa/4.0/">CC BY-SA 4.0</a></p>`;
   root.querySelectorAll("[data-unit]").forEach(button => button.onclick = () => {
+    const { mode } = button.dataset;
     const unit = Number(button.dataset.unit);
     const questions = coreQuestions.slice(unit * roundSize, (unit + 1) * roundSize)
-      .map(item => shuffledQuestion(item));
-    training = { unit, questions, answers: {}, submitted: false };
+      .map(item => shuffledQuestion(mode === "reading" ? readingQuestion(item) : item));
+    training = { mode, unit, questions, answers: {}, submitted: false };
     go(0);
   });
 }
+function readingQuestion(item) {
+  const { readingOptions, ...question } = item;
+  const correct_option = letters.find(key => readingOptions[key] === item.reading);
+  return {
+    ...question,
+    id: item.id.replace("word-meaning-", "word-reading-"),
+    type: "看日文选平假名",
+    options: readingOptions,
+    correct_option,
+    option_explanations: Object.fromEntries(letters.filter(key => key !== correct_option).map(key =>
+      [key, `「${item.word}」的标准读音是「${item.reading}」。注意与「${readingOptions[key]}」的假名区别。`]))
+  };
+}
+
 function completeTraining(round) {
   if (screen === "loop") {
-    state.training.seen.push(...round.questions.map(item => item.word));
+    state.training.seen.push(...round.questions.map(reviewKey));
     return;
   }
-  const units = state.training.wordMeaningUnits;
+  const mode = coreModes[round.mode];
+  const units = state.training[mode.progress];
   const score = round.questions.length - round.mistakes.length;
   units[round.unit] = Math.max(score, units[round.unit] ?? 0);
   if (round.mistakes.length) {
-    const key = today + " 高频词义专项 " + (round.unit + 1);
+    const key = today + " 高频" + (round.mode === "reading" ? "读音" : "词义") + "专项 " + (round.unit + 1);
     const record = state.attempts[key] ??= { answers: {}, mistakes: [], submitted: true };
     for (const item of round.mistakes) {
       if (Object.hasOwn(record.answers, item.id)) continue;
@@ -398,7 +430,7 @@ files.onchange = async () => {
     try {
       const data = JSON.parse(await file.text());
       if (data.version === 1 && data.attempts && data.imported) {
-        for (const mode of ["units", "wordMeaningUnits"]) {
+        for (const mode of ["units", "wordMeaningUnits", "wordReadingUnits"]) {
           for (const [unit, score] of Object.entries(data.training?.[mode] ?? {})) {
             if (/^[0-9]$/.test(unit) && Number.isInteger(score) && score >= 0 && score <= 10) {
               const units = state.training[mode];

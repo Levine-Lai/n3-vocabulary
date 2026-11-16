@@ -45,3 +45,6 @@ main{padding-block:var(--space-xl);min-height:60vh}.head{flex-wrap:wrap;margin-b
   .bar {flex-wrap:wrap;justify-content:flex-start;padding-block:var(--space-sm)}
   .bar nav {flex-wrap:wrap}
 }
+
+.core-section + .core-section {margin-top:var(--space-xl)}
+.core-section .head {margin-bottom:var(--space-md)}
